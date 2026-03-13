@@ -85,10 +85,11 @@ class SharePointClient:
                 request_info = RequestInformation()
                 request_info.http_method = Method.GET
                 request_info.url = next_link
+                request_info.headers.try_add("Accept", "application/json")
                 next_page = await self.client.request_adapter.send_async(
                     request_info, ListItemCollectionResponse, {}
                 )
-                if next_page and next_page.value:
+                if next_page and hasattr(next_page, "value") and next_page.value:
                     all_items.extend(next_page.value)
                     next_link = next_page.odata_next_link
                 else:

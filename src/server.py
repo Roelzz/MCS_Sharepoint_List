@@ -1,4 +1,7 @@
+import traceback
+
 from fastmcp import FastMCP
+from loguru import logger
 from typing import Any, Dict, List, Optional
 
 from .tools.discover import discover_list_schema
@@ -20,10 +23,12 @@ async def discover_list_tool(site_url: str, list_name: str) -> Dict[str, Any]:
 @mcp.tool()
 async def ingest_list_tool(site_url: str, list_name: str, column_overrides: Optional[Dict[str, str]] = None, sync_interval_minutes: int = 60) -> Dict[str, Any]:
     """Pull all items from a SharePoint list, embed them, and store in a Zvec collection."""
-    # 1. Run ingest
-    result = await ingest_sharepoint_list(site_url, list_name, column_overrides)
-    
-    # 2. Register source configuration
+    try:
+        result = await ingest_sharepoint_list(site_url, list_name, column_overrides)
+    except Exception as e:
+        logger.error(f"Ingest failed: {e}\n{traceback.format_exc()}")
+        raise
+
     source_config = {
         "name": list_name,
         "site_url": site_url,
@@ -31,13 +36,11 @@ async def ingest_list_tool(site_url: str, list_name: str, column_overrides: Opti
         "collection_name": result["collection_name"],
         "sync_interval_minutes": sync_interval_minutes,
         "column_overrides": column_overrides or {},
-        "last_sync": "now" # timestamp
+        "last_sync": "now",
     }
     source_manager.add_source(source_config)
-    
-    # 3. Schedule sync
     await schedule_source_sync(source_config)
-    
+
     return result
 
 @mcp.tool()
