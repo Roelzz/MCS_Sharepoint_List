@@ -9,6 +9,7 @@ async def test_list_tools(mcp_session, test_report):
     tools = await mcp_session.list_tools()
     tool_names = [t.name for t in tools.tools]
     expected = [
+        "get_site_lists_tool",
         "discover_list_tool",
         "ingest_list_tool",
         "search_tool",
@@ -19,7 +20,21 @@ async def test_list_tools(mcp_session, test_report):
     ]
     for name in expected:
         assert name in tool_names, f"Missing tool: {name}"
-    assert len(tool_names) == 7
+    assert len(tool_names) == 8
+
+
+async def test_get_site_lists(mcp_session, test_report):
+    data, is_error = await call_tool(
+        mcp_session, test_report, "get_site_lists_tool",
+        {"site_url": SITE_URL},
+    )
+    assert not is_error
+    assert data["site_url"] == SITE_URL
+    assert data["count"] > 0
+    assert len(data["lists"]) == data["count"]
+    for sp_list in data["lists"]:
+        assert "id" in sp_list
+        assert "name" in sp_list
 
 
 async def test_discover_list(mcp_session, test_report):

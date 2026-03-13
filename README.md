@@ -26,7 +26,7 @@ This server fills that gap. It's a pro-code solution that ingests SharePoint lis
 - **Ingests list items with smart chunking** — tiktoken-based splitting that respects token limits
 - **Generates vector embeddings** — Azure OpenAI, OpenAI, or local models (sentence-transformers)
 - **Stores everything in Zvec** — in-process vector DB, no external infrastructure needed
-- **Exposes 7 MCP tools** — discover, ingest, search, cross-search, list sources, refresh, remove
+- **Exposes 8 MCP tools** — list site lists, discover schema, ingest, search, cross-search, list sources, refresh, remove
 - **Background sync** — APScheduler keeps indexed data fresh on a configurable interval
 - **Dual transport** — SSE for Copilot Studio, stdio for Claude Desktop / VS Code
 
@@ -46,7 +46,7 @@ This server fills that gap. It's a pro-code solution that ingests SharePoint lis
 │              │     │                                    │   Zvec   │ │     │  Client      │
 │              │     │                                    │ (Vector  │ │     │              │
 │              │     │  ┌──────────────────────────┐      │   DB)    │ │     │              │
-│              │     │  │      MCP Tools (7)       │◀─────┤          │ │◀───▶│              │
+│              │     │  │      MCP Tools (8)       │◀─────┤          │ │◀───▶│              │
 │              │     │  └──────────────────────────┘      └──────────┘ │     │              │
 │              │     │  ┌──────────────────────────┐                   │     │              │
 │              │     │  │   APScheduler (sync)     │                   │     │              │
@@ -62,6 +62,7 @@ This server fills that gap. It's a pro-code solution that ingests SharePoint lis
 
 | Tool | Parameters | Description |
 |---|---|---|
+| `get_site_lists_tool` | `site_url` | Return all lists available in a SharePoint site with their names, IDs, and metadata. Use this to discover which lists exist before inspecting or ingesting. |
 | `discover_list_tool` | `site_url`, `list_name` | Inspect a SharePoint list and return its schema with proposed column classification (embed/filter/chunk/skip). |
 | `ingest_list_tool` | `site_url`, `list_name`, `column_overrides?`, `sync_interval_minutes?` (default: `SYNC_INTERVAL_MINUTES` env var, or 60) | Pull all items from a list, generate embeddings, store in Zvec, and schedule background sync. |
 | `search_tool` | `query`, `source`, `filters?` (JSON string), `top_k?` (default: 5) | Semantic search within a single list's index. Supports metadata filters like `{"Status": "Open"}`. |

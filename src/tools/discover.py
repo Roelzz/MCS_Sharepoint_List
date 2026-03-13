@@ -1,6 +1,7 @@
 import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from ..sharepoint.client import sharepoint_client
 
@@ -19,6 +20,26 @@ class DiscoveryResult(BaseModel):
     columns: List[ColumnInfo]
     estimated_chunks: int
     estimated_ingest_time_seconds: int
+
+async def get_available_lists(site_url: str) -> List[Dict[str, Any]]:
+    """Return all lists available in a SharePoint site."""
+    site_id = await sharepoint_client.get_site_id_by_url(site_url)
+    lists = await sharepoint_client.get_site_lists(site_id)
+
+    result = []
+    for sp_list in lists:
+        result.append({
+            "id": sp_list.id,
+            "name": sp_list.display_name,
+            "description": getattr(sp_list, "description", None) or "",
+            "created": str(getattr(sp_list, "created_date_time", "")),
+            "last_modified": str(getattr(sp_list, "last_modified_date_time", "")),
+            "web_url": getattr(sp_list, "web_url", None) or "",
+        })
+
+    logger.info(f"Found {len(result)} lists in site '{site_url}'")
+    return result
+
 
 async def discover_list_schema(site_url: str, list_name: str) -> DiscoveryResult:
     """

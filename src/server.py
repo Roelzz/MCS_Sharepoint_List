@@ -4,7 +4,7 @@ from fastmcp import FastMCP
 from loguru import logger
 from typing import Any, Dict, List, Optional
 
-from .tools.discover import discover_list_schema
+from .tools.discover import discover_list_schema, get_available_lists
 from .tools.ingest import ingest_sharepoint_list
 from .tools.search import search_list, search_all_lists
 from .tools.manage import source_manager
@@ -13,6 +13,12 @@ from .config import settings
 
 # Initialize MCP server
 mcp = FastMCP("SharePoint List Search")
+
+@mcp.tool()
+async def get_site_lists_tool(site_url: str) -> Dict[str, Any]:
+    """Return all lists available in a SharePoint site with their names, IDs, and metadata."""
+    lists = await get_available_lists(site_url)
+    return {"site_url": site_url, "lists": lists, "count": len(lists)}
 
 @mcp.tool()
 async def discover_list_tool(site_url: str, list_name: str) -> Dict[str, Any]:
