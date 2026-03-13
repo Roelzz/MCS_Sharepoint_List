@@ -1,3 +1,5 @@
+import os
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
@@ -5,6 +7,8 @@ from typing import Dict, Any
 
 from .tools.ingest import ingest_sharepoint_list
 from .tools.manage import source_manager
+
+DEFAULT_SYNC_INTERVAL = int(os.getenv("SYNC_INTERVAL_MINUTES", "60"))
 
 scheduler = AsyncIOScheduler()
 
@@ -26,7 +30,7 @@ def start_scheduler():
     # Load sources and schedule jobs
     sources = source_manager.list_sources()['sources']
     for source in sources:
-        interval = source.get('sync_interval_minutes', 60)
+        interval = source.get('sync_interval_minutes', DEFAULT_SYNC_INTERVAL)
         if interval > 0:
             scheduler.add_job(
                 sync_job,
@@ -37,7 +41,7 @@ def start_scheduler():
             )
             
 async def schedule_source_sync(source_config: Dict[str, Any]):
-    interval = source_config.get('sync_interval_minutes', 60)
+    interval = source_config.get('sync_interval_minutes', DEFAULT_SYNC_INTERVAL)
     if interval > 0:
         scheduler.add_job(
             sync_job,
