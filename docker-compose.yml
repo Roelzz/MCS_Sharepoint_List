@@ -1,0 +1,19 @@
+services:
+  sharepoint-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    environment:
+      - TENANT_ID=${TENANT_ID}
+      - CLIENT_ID=${CLIENT_ID}
+      - CLIENT_SECRET=${CLIENT_SECRET}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-azure_openai}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
+      - MCP_PORT=${MCP_PORT:-8080}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped

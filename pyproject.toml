@@ -1,0 +1,33 @@
+[project]
+name = "sharepoint-list-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp",
+    "msgraph-sdk",
+    "zvec",
+    "openai",
+    "azure-identity",
+    "tiktoken",
+    "apscheduler",
+    "pydantic-settings",
+    "loguru",
+    "python-dotenv",
+]
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "mcp>=1.26.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+markers = ["integration: requires real SharePoint + Azure OpenAI credentials"]
