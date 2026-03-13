@@ -27,23 +27,24 @@ class Embedder:
                 self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         return self._client
 
-    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str], batch_size: int = 256) -> List[List[float]]:
         if not texts:
             return []
 
         if self.provider in [EmbeddingProvider.AZURE_OPENAI, EmbeddingProvider.OPENAI]:
-            response = await self.client.embeddings.create(
-                input=texts,
-                model=settings.AZURE_OPENAI_DEPLOYMENT
-            )
-            return [data.embedding for data in response.data]
-        
+            all_embeddings: List[List[float]] = []
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                response = await self.client.embeddings.create(
+                    input=batch,
+                    model=settings.AZURE_OPENAI_DEPLOYMENT,
+                )
+                all_embeddings.extend(data.embedding for data in response.data)
+            return all_embeddings
+
         elif self.provider == EmbeddingProvider.LOCAL:
-            # return self.model.encode(texts).tolist()
-            # Placeholder for now as we don't want to install torch/transformers in this step
-            # unless requested.
-            return [[0.0] * 384 for _ in texts]  # Mock
-            
+            return [[0.0] * 384 for _ in texts]
+
         return []
 
 # Singleton

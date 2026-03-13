@@ -9,7 +9,7 @@ from src.tools.discover import discover_list_schema
 from src.tools.ingest import ingest_sharepoint_list
 from src.tools.manage import source_manager
 
-SITE_URL = "https://roelschenk.sharepoint.com/sites/AI-Lab"
+SITE_URL = "https://copilotstudiotraining-my.sharepoint.com/personal/roel_schenk_copilotstudiotraining_onmicrosoft_com"
 LIST_NAME = "vector_search_test_data"
 
 

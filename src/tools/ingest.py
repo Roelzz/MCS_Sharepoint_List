@@ -37,57 +37,50 @@ async def ingest_sharepoint_list(site_url: str, list_name: str, column_overrides
     store = VectorStore(collection_name)
     
     # 3. Fetch Items
-    # In real impl, use pagination.get_all_items wrapper
-    items = await sharepoint_client.get_list_items(schema.list_id, schema.list_id) # Using list_id as site_id temporarily due to mock in discover
-    # Wait, discover_list_schema mock uses list_id as target_list['id']. 
-    # But sharepoint_client.get_list_items needs site_id.
-    # We need to resolve site_id again or pass it.
     site_id = await sharepoint_client.get_site_id_by_url(site_url)
     items = await sharepoint_client.get_list_items(site_id, list_id)
     
     # 4. Process Items
+    embed_fields = [c for c in schema.columns if c.classification == 'embed']
+    filter_fields = [c for c in schema.columns if c.classification == 'filter']
+    chunk_fields = [c for c in schema.columns if c.classification == 'chunk']
+
     documents = []
     texts_to_embed = []
-    
+
     for item in items:
-        # Build template text
-        # Separate fields by classification
-        embed_fields = [c for c in schema.columns if c.classification == 'embed']
-        filter_fields = [c for c in schema.columns if c.classification == 'filter']
-        chunk_fields = [c for c in schema.columns if c.classification == 'chunk']
-        
+        fields = item.fields.additional_data if item.fields else {}
+        item_id = item.id
+
         # Metadata prefix
         metadata_parts = []
         for col in embed_fields + filter_fields:
-            val = item.get(col.internal_name)
+            val = fields.get(col.internal_name)
             if val:
                 metadata_parts.append(f"{col.display_name}: {val}")
         metadata_prefix = ". ".join(metadata_parts)
-        
+
         # Chunk text
         chunks = []
         if chunk_fields:
             chunk_text = ""
             for col in chunk_fields:
-                val = item.get(col.internal_name)
+                val = fields.get(col.internal_name)
                 if val:
                     chunk_text += f"{col.display_name}:\n{val}\n\n"
-            
+
             chunks = chunker.chunk_text(chunk_text, metadata_prefix)
         else:
-            # No chunk fields, just embed metadata prefix as content
             chunks = [metadata_prefix]
-            
+
         # Prepare docs
         for i, chunk in enumerate(chunks):
-            doc_id = f"{item['id']}_{i}"
+            doc_id = f"{item_id}_{i}"
             documents.append({
                 "id": doc_id,
-                "record_id": item['id'],
+                "record_id": item_id,
                 "chunk_index": i,
                 "content": chunk,
-                # Add filter fields
-                **{col.internal_name: item.get(col.internal_name) for col in filter_fields}
             })
             texts_to_embed.append(chunk)
 

@@ -13,42 +13,43 @@ class VectorStore:
         self.dimension = dimension
         self.path = settings.get_zvec_dir() / collection_name
         
-        # Define schema
         self.schema = zvec.CollectionSchema(
             name=collection_name,
             vectors=zvec.VectorSchema("embedding", zvec.DataType.VECTOR_FP32, dimension),
-            # Scalar fields are dynamic or mapped? Zvec supports dynamic properties usually,
-            # or explicit schema. Let's assume explicit for now based on spec.
-            # But spec says dynamic. Let's start with content and metadata as strings/JSON?
-            # Or use properties if Zvec supports it.
-            # Assuming Zvec properties support.
+            fields=[
+                zvec.FieldSchema("record_id", zvec.DataType.STRING),
+                zvec.FieldSchema("chunk_index", zvec.DataType.INT32),
+                zvec.FieldSchema("content", zvec.DataType.STRING),
+            ],
         )
         
         # Ensure path exists for persistent storage
         # Zvec create_and_open handles it.
 
     def _get_collection(self):
+        if self.path.exists():
+            return zvec.open(path=str(self.path))
         return zvec.create_and_open(path=str(self.path), schema=self.schema)
 
-    def add_documents(self, documents: List[Dict[str, Any]]):
+    def add_documents(self, documents: List[Dict[str, Any]], batch_size: int = 500):
         """
-        Add documents to the collection.
+        Add documents to the collection in batches.
         Each doc should have 'id', 'embedding' (list of floats), and metadata fields.
         """
         collection = self._get_collection()
-        
+
         zvec_docs = []
         for doc in documents:
             vector = doc.pop("embedding")
             doc_id = doc.pop("id")
-            # Remaining fields are metadata
             zvec_docs.append(zvec.Doc(
-                id=doc_id, 
+                id=doc_id,
                 vectors={"embedding": vector},
-                properties=doc  # Assuming Zvec supports arbitrary properties or specific ones
+                fields=doc,
             ))
-            
-        collection.insert(zvec_docs)
+
+        for i in range(0, len(zvec_docs), batch_size):
+            collection.insert(zvec_docs[i : i + batch_size])
 
     def search(self, query_vector: List[float], top_k: int = 5, filters: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """
@@ -66,15 +67,14 @@ class VectorStore:
         # Format results
         formatted = []
         for r in results:
-            # Fetch full document properties? 
-            # Does query return properties? Usually yes or needs fetch.
-            # Assuming 'r' contains score and id, maybe properties.
-            formatted.append({
+            entry = {
                 "id": r.id,
                 "score": r.score,
-                # "content": r.properties.get("content"),
-                # "metadata": r.properties
-            })
+            }
+            if r.fields:
+                entry["content"] = r.fields.get("content", "")
+                entry["metadata"] = {k: v for k, v in r.fields.items() if k != "content"}
+            formatted.append(entry)
             
         return formatted
 

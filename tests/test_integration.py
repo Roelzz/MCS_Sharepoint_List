@@ -18,11 +18,11 @@ async def test_discover_list_schema():
     assert result.list_name == LIST_NAME
     assert result.item_count > 0
 
-    column_names = [c.internal_name for c in result.columns]
+    display_names = [c.display_name for c in result.columns]
     expected = ["Title", "Description", "Category", "Priority", "Status",
                 "Resolution", "SubmittedBy", "Department", "Location"]
     for col in expected:
-        assert col in column_names, f"Missing column: {col}"
+        assert col in display_names, f"Missing column: {col}"
 
 
 async def test_discover_list_tool_wrapper():
