@@ -17,3 +17,4 @@ data/
 htmlcov/
 .DS_Store
 .worktrees/
+tests/test_results.md
