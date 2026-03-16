@@ -20,6 +20,9 @@ class VectorStore:
                 zvec.FieldSchema("record_id", zvec.DataType.STRING),
                 zvec.FieldSchema("chunk_index", zvec.DataType.INT32),
                 zvec.FieldSchema("content", zvec.DataType.STRING),
+                zvec.FieldSchema("site_id", zvec.DataType.STRING),
+                zvec.FieldSchema("list_id", zvec.DataType.STRING),
+                zvec.FieldSchema("list_path", zvec.DataType.STRING),
             ],
         )
         

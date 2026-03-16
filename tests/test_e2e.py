@@ -15,12 +15,13 @@ async def test_list_tools(mcp_session, test_report):
         "search_tool",
         "search_all_tool",
         "list_sources_tool",
+        "list_sources_admin_tool",
         "remove_source_tool",
         "refresh_tool",
     ]
     for name in expected:
         assert name in tool_names, f"Missing tool: {name}"
-    assert len(tool_names) == 8
+    assert len(tool_names) == 9
 
 
 async def test_get_site_lists(mcp_session, test_report):
@@ -57,6 +58,22 @@ async def test_ingest_list(ingested_via_mcp):
 async def test_list_sources(mcp_session, test_report, ingested_via_mcp):
     data, is_error = await call_tool(
         mcp_session, test_report, "list_sources_tool", {},
+    )
+    assert not is_error
+    names = [s["name"] for s in data["sources"]]
+    assert LIST_NAME in names
+    for source in data["sources"]:
+        if source["name"] == LIST_NAME:
+            assert "name" in source
+            assert "list_name" in source
+            # Consumer endpoint should NOT expose admin fields
+            assert "collection_name" not in source
+            assert "site_url" not in source
+
+
+async def test_list_sources_admin(mcp_session, test_report, ingested_via_mcp):
+    data, is_error = await call_tool(
+        mcp_session, test_report, "list_sources_admin_tool", {},
     )
     assert not is_error
     names = [s["name"] for s in data["sources"]]
@@ -119,6 +136,21 @@ async def test_search_result_structure(mcp_session, test_report, ingested_via_mc
 
     scores = [r["score"] for r in data["results"]]
     assert scores == sorted(scores, reverse=True), "Results not sorted by score descending"
+
+
+async def test_search_result_metadata(mcp_session, test_report, ingested_via_mcp):
+    """Verify ingested items contain security trimming metadata."""
+    data, is_error = await call_tool(
+        mcp_session, test_report, "search_tool",
+        {"query": "VPN connectivity", "source": LIST_NAME, "top_k": 1},
+    )
+    assert not is_error
+    assert len(data["results"]) > 0
+    metadata = data["results"][0].get("metadata", {})
+    assert "site_id" in metadata, "Missing site_id in metadata"
+    assert "list_id" in metadata, "Missing list_id in metadata"
+    assert "list_path" in metadata, "Missing list_path in metadata"
+    assert "record_id" in metadata, "Missing record_id in metadata"
 
 
 async def test_search_all(mcp_session, test_report, ingested_via_mcp):

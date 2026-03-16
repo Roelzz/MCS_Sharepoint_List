@@ -39,6 +39,9 @@ async def ingest_sharepoint_list(site_url: str, list_name: str, column_overrides
     # 3. Fetch Items
     site_id = await sharepoint_client.get_site_id_by_url(site_url)
     items = await sharepoint_client.get_list_items(site_id, list_id)
+
+    # Derive list_path for security trimming (SharePoint convention)
+    list_path = f"{site_url.rstrip('/')}/Lists/{list_name}"
     
     # 4. Process Items
     embed_fields = [c for c in schema.columns if c.classification == 'embed']
@@ -81,6 +84,9 @@ async def ingest_sharepoint_list(site_url: str, list_name: str, column_overrides
                 "record_id": item_id,
                 "chunk_index": i,
                 "content": chunk,
+                "site_id": site_id,
+                "list_id": list_id,
+                "list_path": list_path,
             })
             texts_to_embed.append(chunk)
 
