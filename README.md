@@ -26,7 +26,7 @@ This server fills that gap. It's a pro-code solution that ingests SharePoint lis
 - **Ingests list items with smart chunking** — tiktoken-based splitting that respects token limits
 - **Generates vector embeddings** — Azure OpenAI, OpenAI, or local models (sentence-transformers)
 - **Stores everything in Zvec** — in-process vector DB, no external infrastructure needed
-- **Exposes 8 MCP tools** — list site lists, discover schema, ingest, search, cross-search, list sources, refresh, remove
+- **Exposes 9 MCP tools** — list site lists, discover schema, ingest, search, cross-search, list sources (consumer + admin), refresh, remove
 - **Background sync** — APScheduler keeps indexed data fresh on a configurable interval
 - **Dual transport** — SSE for Copilot Studio, stdio for Claude Desktop / VS Code
 
@@ -60,16 +60,26 @@ This server fills that gap. It's a pro-code solution that ingests SharePoint lis
 
 ## 🤖 Available Tools
 
+Tools are split into **consumer** (available to all users) and **admin** (requires `mcp-admin` scope when auth is enabled).
+
+### Consumer Tools
+
 | Tool | Parameters | Description |
 |---|---|---|
-| `get_site_lists_tool` | `site_url` | Return all lists available in a SharePoint site with their names, IDs, and metadata. Use this to discover which lists exist before inspecting or ingesting. |
-| `discover_list_tool` | `site_url`, `list_name` | Inspect a SharePoint list and return its schema with proposed column classification (embed/filter/chunk/skip). |
-| `ingest_list_tool` | `site_url`, `list_name`, `column_overrides?`, `sync_interval_minutes?` (default: `SYNC_INTERVAL_MINUTES` env var, or 60) | Pull all items from a list, generate embeddings, store in Zvec, and schedule background sync. |
-| `search_tool` | `query`, `source`, `filters?` (JSON string), `top_k?` (default: 5) | Semantic search within a single list's index. Supports metadata filters like `{"Status": "Open"}`. |
-| `search_all_tool` | `query`, `sources?` (list of names), `top_k?` (default: 5) | Semantic search across all indexed lists (or a subset), ranked by relevance. |
-| `list_sources_tool` | _(none)_ | Show all registered lists with their stats and sync status. |
+| `get_site_lists_tool` | `site_url` | Return all lists available in a SharePoint site with their names, IDs, and metadata. |
+| `discover_list_tool` | `site_url`, `list_name` | Inspect a SharePoint list and return its schema with proposed column classification. |
+| `search_tool` | `query`, `source`, `filters?` (JSON string), `top_k?` (default: 5) | Semantic search within a single list's index. When auth is enabled, results are security-trimmed to items the user can access in SharePoint. |
+| `search_all_tool` | `query`, `sources?` (list of names), `top_k?` (default: 5) | Semantic search across all indexed lists (or a subset). Security-trimmed when auth is enabled. |
+| `list_sources_tool` | _(none)_ | Show all registered searchable lists with their names. |
+
+### Admin Tools (require `mcp-admin` scope)
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `ingest_list_tool` | `site_url`, `list_name`, `column_overrides?`, `sync_interval_minutes?` (default: 60) | Pull all items from a list, generate embeddings, store in Zvec, and schedule background sync. |
 | `refresh_tool` | `source?` | Trigger a re-sync of one specific list or all registered lists. |
 | `remove_source_tool` | `source` | Remove a list's Zvec collection, config, and scheduled sync. |
+| `list_sources_admin_tool` | _(none)_ | Show all registered lists with full config details (admin only). |
 
 ---
 
@@ -112,7 +122,10 @@ APScheduler runs on a configurable interval (default: `SYNC_INTERVAL_MINUTES` en
 
 ### Step 1: Azure AD App Registration
 
-This server uses **App-Only Authentication** — it runs as a service principal, not a signed-in user.
+The server supports two authentication modes:
+
+- **App-Only (default, `AUTH_ENABLED=false`)** — runs as a service principal. All users see all indexed data. Simple setup, good for testing and trusted environments.
+- **Delegated Auth (`AUTH_ENABLED=true`)** — users sign in via OAuth. Search results are security-trimmed to items the user can access in SharePoint. Admin tools require the `mcp-admin` scope.
 
 #### Automated Setup
 
@@ -139,6 +152,11 @@ Follow the prompts. This creates the App Registration, Client Secret, and Permis
    - **`Sites.Read.All`** — read access to all SharePoint sites (easiest, use for testing)
    - **`Sites.Selected`** — no access by default, you grant per-site (recommended for production)
 3. Click **Grant admin consent for [Your Org]**
+
+**For delegated auth**, also add **Delegated permissions**:
+1. **Microsoft Graph** → **Delegated permissions** → `Sites.Read.All`
+2. Expose an API: **App registrations** → your app → **Expose an API** → set the Application ID URI
+3. Add scopes: `mcp-access` (for consumer tools) and `mcp-admin` (for admin tools)
 
 ### Step 2: Grant Site Access (Sites.Selected only)
 
@@ -230,6 +248,22 @@ http://your-host:8080/sse
 | `DATA_DIR` | Directory for Zvec collections and config | `data` | No |
 | `SYNC_INTERVAL_MINUTES` | Default background sync interval in minutes | `60` | No |
 
+### Auth Configuration (Delegated Auth)
+
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `AUTH_ENABLED` | Enable delegated auth with security trimming | `false` | No |
+| `MCP_BASE_URL` | Public base URL of the MCP server (used for OAuth redirects) | `http://localhost:8080` | If auth enabled |
+| `MCP_IDENTIFIER_URI` | Application ID URI from Entra app registration | — | If auth enabled |
+| `MCP_REQUIRED_SCOPES` | Comma-separated scopes required for consumer tools | `mcp-access` | No |
+| `MCP_GRAPH_SCOPES` | Comma-separated Graph scopes for OBO token exchange | `https://graph.microsoft.com/Sites.Read.All` | No |
+
+When `AUTH_ENABLED=true`:
+- Users authenticate via OAuth2 through FastMCP's AzureProvider
+- The server exchanges the user's token for a Graph API token (On-Behalf-Of flow)
+- Search results are **security-trimmed**: only items the user can access in SharePoint are returned
+- Admin tools (`ingest_list_tool`, `refresh_tool`, `remove_source_tool`, `list_sources_admin_tool`) require the `mcp-admin` scope
+
 ---
 
 ## 🧪 Test Data
@@ -243,10 +277,18 @@ The `test-data/` directory contains a ready-made dataset for evaluating semantic
 
 ---
 
+## ⬆️ Upgrading from Pre-Auth Versions
+
+If you have existing indexed collections from before the delegated auth update, you need to **re-ingest all lists** after upgrading. The new version stores additional metadata (`list_path`) required for security trimming. Without re-ingestion, security trimming will be skipped for those collections and a warning will be logged.
+
+```bash
+# Re-ingest each list via the ingest_list_tool or trigger a full refresh
+```
+
 ## ⚠️ Limitations & Notes
 
-- **App-only auth** — the server runs as a service principal, not a signed-in user. It sees all data granted to the App Registration. Be careful not to index sensitive lists unless the bot's users are authorized to see them.
 - **5,000 item limit** — Graph API returns a maximum of 5,000 items per list query. Lists exceeding this require pagination (not yet implemented).
 - **Full re-ingest on sync** — background sync performs a complete re-ingest, not delta updates. This is simple and reliable but not optimal for very large lists.
 - **Graph API rate limits** — Microsoft throttles Graph API calls. The background syncer is designed to be gentle, but initial ingestion of large lists may take time.
-- **No user-level permissions** — results are not filtered by the querying user's SharePoint permissions. Access control is at the App Registration level.
+- **Security trimming requires re-ingest** — collections indexed before the delegated auth feature lack the `list_path` metadata needed for security trimming. Re-ingest to enable it.
+- **Security trimming overhead** — with auth enabled, search fetches 4x candidates (instead of 2x) to account for items being filtered out. Large result sets with restrictive permissions may return fewer than `top_k` results.

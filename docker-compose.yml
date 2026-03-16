@@ -16,4 +16,9 @@ services:
       - MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
       - MCP_PORT=${MCP_PORT:-8080}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:8080}
+      - MCP_IDENTIFIER_URI=${MCP_IDENTIFIER_URI:-}
+      - MCP_REQUIRED_SCOPES=${MCP_REQUIRED_SCOPES:-mcp-access}
+      - MCP_GRAPH_SCOPES=${MCP_GRAPH_SCOPES:-https://graph.microsoft.com/Sites.Read.All}
     restart: unless-stopped

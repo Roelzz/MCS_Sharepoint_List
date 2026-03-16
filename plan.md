@@ -1,89 +1,95 @@
 # Implementation Plan: SharePoint List Semantic Search MCP Server
 
-This plan outlines the steps to build a self-contained MCP server that provides semantic search capabilities for SharePoint lists using Microsoft Graph API and a local vector database.
+This document reflects the actual implementation as built.
 
-## Problem Statement
-SharePoint lists lack native semantic search capabilities (Graph API offers only keyword search). Existing solutions often require heavy infrastructure (Azure AI Search). This project aims to build a lightweight, portable MCP server that ingests SharePoint list data, generates embeddings, and enables semantic search via standard MCP tools.
+## Architecture
 
-## Proposed Architecture
-- **Language:** Python 3.12 (standard for AI/MCP work).
-- **Framework:** `fastmcp` for the MCP server.
-- **Vector Database:** **Zvec** (as specified). It runs in-process, persists to disk, and requires zero external infrastructure.
-- **SharePoint Client:** `msgraph-sdk` for robust Graph API interaction.
-- **Embeddings:** Azure OpenAI (`text-embedding-3-small`) or Local (`sentence-transformers`).
-- **Scheduler:** `apscheduler` for robust background sync jobs (replacing manual thread loops).
-- **Deployment:** Docker container with persistent volume for data.
+- **Language:** Python 3.12
+- **Framework:** `fastmcp` for the MCP server (SSE + stdio transports)
+- **Vector Database:** Zvec (in-process, persistent to disk)
+- **SharePoint Client:** `msgraph-sdk` for Graph API interaction
+- **Embeddings:** Azure OpenAI (`text-embedding-3-small`), OpenAI, or local (`sentence-transformers`)
+- **Scheduler:** `apscheduler` for background sync jobs
+- **Auth:** FastMCP `AzureProvider` with delegated auth + OBO token exchange (optional)
+- **Deployment:** Docker container with persistent volume, or local via stdio
 
 ## Project Structure
-Following `CLAUDE.md` guidelines for complex projects (Docker deployment):
+
 ```
 sharepoint-list-mcp/
+├── main.py                    # Entry point
 ├── src/
-│   ├── __init__.py
-│   ├── server.py              # Entry point (FastMCP)
-│   ├── config.py              # Environment configuration
-│   ├── models.py              # Pydantic models for API/DB
-│   ├── graph_client.py        # MS Graph API wrapper
-│   ├── vector_store.py        # Zvec interface
-│   ├── ingest_pipeline.py     # Schema discovery, chunking, embedding
-│   ├── scheduler.py           # Background sync manager
-│   └── tools/                 # Individual MCP tool implementations
-│       ├── discover.py
-│       ├── ingest.py
-│       ├── search.py
-│       └── manage.py
+│   ├── server.py              # FastMCP server, tool registration, auth setup
+│   ├── config.py              # Pydantic settings (env-based config)
+│   ├── graph_client.py        # MS Graph API wrapper (app-only auth)
+│   ├── scheduler.py           # APScheduler background sync
+│   ├── security_trimming.py   # OBO-based permission filtering
+│   ├── pipeline/
+│   │   ├── embedder.py        # Embedding service (Azure/OpenAI/local)
+│   │   └── chunker.py         # tiktoken-based text chunking
+│   ├── store/
+│   │   └── zvec_store.py      # Zvec collection management
+│   └── tools/
+│       ├── discover.py        # get_site_lists, discover_list_schema
+│       ├── ingest.py          # ingest_sharepoint_list
+│       ├── search.py          # search_list, search_all_lists
+│       └── manage.py          # source_manager (add/remove/list sources)
 ├── tests/
-│   ├── test_ingest.py
-│   ├── test_search.py
-│   └── conftest.py
-├── .env.example
-├── .gitignore
-├── pyproject.toml
-├── Dockerfile
+│   └── test_e2e.py            # E2E tests via MCP SSE transport (15 tests)
 ├── docker-compose.yml
-└── README.md
+├── Dockerfile
+├── .env.example
+└── pyproject.toml
 ```
 
-## Implementation Steps
+## Tools (9 total)
 
-### Phase 1: Foundation & Setup
-- [ ] Initialize project with `uv` and create directory structure (`todo:init-project`)
-- [ ] Create `Dockerfile` and `docker-compose.yml` (`todo:docker-setup`)
-- [ ] Implement configuration loading (`src/config.py`) using `pydantic-settings` (`todo:config`)
+### Consumer Tools (no special scope required)
+- `get_site_lists_tool` — discover available lists in a site
+- `discover_list_tool` — inspect list schema with column classification
+- `search_tool` — semantic search within a single list (security-trimmed when auth enabled)
+- `search_all_tool` — cross-list semantic search (security-trimmed when auth enabled)
+- `list_sources_tool` — show registered searchable list names
 
-### Phase 2: SharePoint Integration
-- [ ] Implement MS Graph Client (`src/graph_client.py`) with `msgraph-sdk` (`todo:graph-client`)
-- [ ] Implement Schema Discovery (`src/tools/discover.py`) to fetch list columns and propose classification (`todo:schema-discovery`)
-- [ ] Implement List Item Fetching with pagination support (`todo:fetch-items`)
+### Admin Tools (require `mcp-admin` scope when auth enabled)
+- `ingest_list_tool` — ingest a list into Zvec + schedule sync
+- `refresh_tool` — re-sync one or all lists
+- `remove_source_tool` — drop a list's index and config
+- `list_sources_admin_tool` — show full config details for all sources
 
-### Phase 3: Vector Store & Ingestion
-- [ ] Implement Vector Store interface (`src/vector_store.py`) using **Zvec** (`todo:vector-store`)
-- [ ] Implement Text Chunking & Template Builder (`src/ingest_pipeline.py`) (`todo:chunking`)
-- [ ] Implement Embedding Service wrapper (Azure OpenAI/Local) (`todo:embedding-service`)
-- [ ] Build the `ingest_list` tool logic: fetch -> process -> embed -> store (`todo:ingest-logic`)
+## Authentication Modes
 
-### Phase 4: Search & MCP Tools
-- [ ] Implement `search` and `search_all` logic (embedding query -> vector search -> result formatting) (`todo:search-logic`)
-- [ ] Expose all capabilities as MCP tools in `src/server.py` (`todo:mcp-server`)
-- [ ] Implement `get_record` and `refresh` tools (`todo:management-tools`)
-- [ ] Setup `apscheduler` for background sync (`todo:scheduler`)
+### App-Only (`AUTH_ENABLED=false`, default)
+- Server authenticates as service principal via `CLIENT_ID` / `CLIENT_SECRET`
+- All tools available without restrictions
+- No security trimming — all indexed data returned to all users
 
-### Phase 5: Testing & Refinement
-- [ ] Write unit tests for chunking and template generation (`todo:unit-tests`)
-- [ ] Perform end-to-end test with a real SharePoint list (dev environment) (`todo:e2e-test`)
-- [ ] Optimize Docker build size and startup time (`todo:optimize-docker`)
+### Delegated Auth (`AUTH_ENABLED=true`)
+- Users sign in via OAuth2 (FastMCP AzureProvider)
+- Consumer tools use OBO token exchange to get a Graph API token scoped to the user
+- Search results are security-trimmed: Graph API checks whether the user can access each item's SharePoint list
+- Admin tools gated behind `mcp-admin` scope
+- Requires `MCP_BASE_URL`, `MCP_IDENTIFIER_URI`, and Entra app registration with exposed API scopes
 
-## Open Questions & Discussion Points
-1.  **Authentication Options:**
-    *   **Option A (Current Spec):** `Sites.Read.All` (App-only). Simple, but gives access to *all* SharePoint sites.
-    *   **Option B (Recommended):** `Sites.Selected` (App-only). Requires admin to explicitly grant access to specific sites. Much more secure as it limits the "blast radius" to only the relevant lists.
-    *   **Option C (Advanced):** ACL Indexing. Index item-level permissions and filter at query time. Complex and likely out of scope for MVP.
-    *   *Decision:* I will implement support for **Option B** (which is just configuration on the Azure side) and document the setup process.
+## Security Trimming
 
-2.  **Scheduler:** I'm proposing `apscheduler` for more robustness than raw threads.
+When auth is enabled and search is performed:
+1. Search fetches 4x candidates (extra headroom for filtered-out items)
+2. For each result, extract the `list_path` from stored metadata
+3. Batch-check user permissions against SharePoint via Graph API using the OBO token
+4. Filter out items the user cannot access
+5. Deduplicate and return top_k results
 
-## Improvements from Spec
--   **Auth:** Recommend `Sites.Selected` for better security scope.
--   **APScheduler:** Better job management for syncs.
--   **Pydantic Settings:** Cleaner configuration management.
--   **Testing:** Added explicit testing phase.
+Collections ingested before the auth feature lack `list_path` metadata — security trimming is skipped with a warning. Re-ingest to enable.
+
+## Implementation Status
+
+All phases complete:
+- [x] Foundation: project structure, config, Docker
+- [x] SharePoint integration: Graph client, schema discovery, item fetching
+- [x] Vector store: Zvec integration, chunking, embedding
+- [x] Search: single-list, cross-list, dedup
+- [x] Management: source CRUD, background sync
+- [x] Delegated auth: AzureProvider, OBO flow, security trimming
+- [x] Admin/consumer tool split
+- [x] E2E tests: 15/15 passing
