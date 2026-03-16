@@ -770,6 +770,46 @@ Required Graph API permissions:
 
 The app registration needs admin consent for application permissions.
 
+### 10.4 Delegated Auth Configuration
+
+When `AUTH_ENABLED=true`, the server uses FastMCP's `AzureProvider` for OAuth2 authentication with Entra ID.
+
+| Variable | Required | Description |
+|---|---|---|
+| `AUTH_ENABLED` | no | Enable delegated auth (default: `false`) |
+| `MCP_BASE_URL` | if auth | Public URL of the MCP server for OAuth redirects |
+| `MCP_IDENTIFIER_URI` | if auth | Application ID URI from Entra app registration |
+| `MCP_REQUIRED_SCOPES` | no | Scopes required for consumer tools (default: `mcp-access`) |
+| `MCP_GRAPH_SCOPES` | no | Graph scopes for OBO token exchange (default: `https://graph.microsoft.com/Sites.Read.All`) |
+
+**How it works:**
+1. User authenticates via OAuth2 flow (authorization code grant)
+2. FastMCP validates the access token and extracts scopes
+3. Consumer tools (search, discover, list_sources) are available to all authenticated users
+4. Admin tools (ingest, refresh, remove, list_sources_admin) require the `mcp-admin` scope
+5. For search operations, the server exchanges the user's token for a Graph API token using the On-Behalf-Of (OBO) flow
+6. Search results are security-trimmed: the server checks each result's SharePoint list permissions against the user's Graph token, filtering out items the user cannot access
+
+**Security trimming details:**
+- Each ingested item stores a `list_path` in its Zvec metadata
+- At search time, the server batch-checks user access to the SharePoint lists referenced in results
+- Items from lists the user cannot access are removed before returning results
+- Collections ingested before the auth feature lack `list_path` metadata — security trimming is skipped with a warning log; re-ingest to enable
+
+**Tool split:**
+
+| Tool | Auth Required | Scope |
+|---|---|---|
+| `get_site_lists_tool` | Yes (any scope) | Consumer |
+| `discover_list_tool` | Yes (any scope) | Consumer |
+| `search_tool` | Yes (any scope) | Consumer |
+| `search_all_tool` | Yes (any scope) | Consumer |
+| `list_sources_tool` | Yes (any scope) | Consumer |
+| `ingest_list_tool` | Yes | `mcp-admin` |
+| `refresh_tool` | Yes | `mcp-admin` |
+| `remove_source_tool` | Yes | `mcp-admin` |
+| `list_sources_admin_tool` | Yes | `mcp-admin` |
+
 ---
 
 ## 11. Deployment
@@ -907,9 +947,9 @@ Generate BM25 or SPLADE sparse vectors alongside dense embeddings. Use Zvec's na
 
 Extract text from SharePoint list item attachments (PDF, DOCX, etc.), embed alongside the list item content.
 
-### 14.5 Permission-Aware Search
+### 14.5 Permission-Aware Search — IMPLEMENTED
 
-Sync SharePoint item-level permissions into Zvec and enforce them at query time by filtering on the requesting user's groups.
+Delegated auth with security trimming is now available. When `AUTH_ENABLED=true`, search results are filtered using the user's Graph API token via OBO flow. See section 10.4 for details.
 
 ### 14.6 Web UI for Configuration
 
